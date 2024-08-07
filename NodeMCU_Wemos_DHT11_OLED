@@ -1,0 +1,159 @@
+//D1 Mini Pro with OLED
+
+#include <ESP8266WiFi.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include "secrets.h" // Include the secrets header file
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+//const char* ssid = "your_SSID";
+//const char* password = "your_password";
+const char* host = "192.168.0.100"; // NodeMCU IP address
+
+void setup() {
+  Serial.begin(115200);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;);
+  }
+  display.display();
+  delay(2000);
+  display.clearDisplay();
+
+  WiFi.begin(ssid, password);
+  Serial.println();
+  Serial.println("Connecting to WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("WiFi connected");
+}
+
+void loop() {
+  WiFiClient client;
+  Serial.println("Attempting to connect to NodeMCU...");
+  if (client.connect(host, 80)) {
+    Serial.println("Connected to NodeMCU");
+    client.print(String("GET ") + "/" + " HTTP/1.1\r\n" +
+                 "Host: " + host + "\r\n" +
+                 "Connection: close\r\n\r\n");
+    delay(500);
+
+    boolean displayUpdated = false;
+
+    // Skip HTTP headers
+    while (client.connected() && !client.available()) {
+      delay(1);
+    }
+    while (client.available()) {
+      String line = client.readStringUntil('\n');
+      Serial.println("Received line: " + line);  // Debugging line
+
+      // Only display lines that contain the sensor values (ignore HTTP headers)
+      if (line.startsWith("Temperature:") || line.startsWith("Humidity:")) {
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(WHITE);
+        display.setCursor(0, 10);
+        display.print(line);
+        display.display();
+        displayUpdated = true;
+      }
+    }
+    client.stop();
+
+    // If no relevant data was received, show an error message on the display
+    if (!displayUpdated) {
+      display.clearDisplay();
+      display.setTextSize(1);
+      display.setTextColor(WHITE);
+      display.setCursor(0, 10);
+      display.print("No data received");
+      display.display();
+    }
+
+  } else {
+    Serial.println("Connection failed");
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 10);
+    display.print("Connection failed");
+    display.display();
+  }
+  delay(2000);
+}
+
+// secrets.h file 
+#ifndef SECRETS_H
+#define SECRETS_H
+
+const char* ssid = "";
+const char* password = "";
+
+#endif // SECRETS_H
+
+
+// Node MCU with DHT11 Sensor
+
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <DHT.h>
+#include "secrets.h"  // Include the secrets.h file
+
+#define DHTTYPE DHT11
+#define DHTPIN D4
+
+DHT dht(DHTPIN, DHTTYPE);
+ESP8266WebServer server(80);
+
+void setup() {
+  Serial.begin(115200);
+  delay(10);
+
+  Serial.print("Connecting to ");
+  Serial.println(SECRET_SSID);
+
+  WiFi.begin(SECRET_SSID, SECRET_PASS);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+
+  server.on("/", handleRoot);
+  server.begin();
+  Serial.println("HTTP server started");
+}
+
+void loop() {
+  server.handleClient();
+}
+
+void handleRoot() {
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return;
+  }
+
+  String message = "Temperature: " + String(t) + "C\n";
+  message += "Humidity: " + String(h) + "%";
+  server.send(200, "text/plain", message);
+}
+
+// secrets.h file 
+#define SECRET_SSID ""
+#define SECRET_PASS ""
+
